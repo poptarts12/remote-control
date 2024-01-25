@@ -5,8 +5,8 @@ import keyboard
 
 
 def main():
-    ser = Server(576)
-    ser.listen_and_accept()
+    keyboard_ser = Keyboard_server(576)
+    keyboard_ser.listen_and_accept()
 
 
 
@@ -17,7 +17,7 @@ def main():
 
 
 
-class Server:
+class Keyboard_server:
     def __init__(self,port) -> None:
         try: 
             self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
