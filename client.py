@@ -13,11 +13,8 @@ ser_ip = "192.168.1.110"
 
 
 def main():
-    if is_connection_possible(ser_ip, keyboard_port): #it is only checking for the tcp because udp cant be checked
-        start_threads()
-    else:
-        print("server is not reachable. fuck you:)")
-        exit()
+    start_threads()
+    
 
 
 def start_threads():
@@ -148,13 +145,7 @@ class Keyboard_engine:
 
 
 
-def is_connection_possible(host, port):
-    try:
-        # Create a socket and attempt to connect to the specified host and port
-        with socket.create_connection((host, port), timeout=5) as s:
-            return True  # Connection successful
-    except (socket.timeout, ConnectionRefusedError):
-        return False  # Connection failed
+
     
 
 

@@ -1,11 +1,13 @@
-import socket
-import keyboard
-import threading
-import tkinter
+import sys
+from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget
+from PyQt5.QtGui import QPixmap, QImage
+from PyQt5.QtCore import Qt, QTimer
 from PIL import Image, ImageTk
+import threading
+import keyboard
+import socket
 import struct
 import io
-import time
 
 keyboard_port = 576 #24 * 24
 screen_port = 626 # 25 * 25 its funnier
@@ -14,31 +16,19 @@ def main():
     # Create threads for each function
     keyboard_thread = threading.Thread(target=keyboard_control)
     screen_thread = threading.Thread(target=screen_control)
-    escape_thread = threading.Thread(target=listen_for_escape,args=(keyboard_thread,screen_thread))
 
     # Start the threads
     keyboard_thread.start()
     screen_thread.start()
-    escape_thread.start()
 
     # Wait for all threads to finish
     keyboard_thread.join()
     screen_thread.join()
-    escape_thread.join()
 
     # Add an input prompt to keep the command prompt open
     input("Press Enter to exit...")
 
-def listen_for_escape(keyboard_thread, screen_thread):
-    print("Press 'esc' to exit...")
-    keyboard.wait("esc")
-    exit()
-    # You can perform cleanup or additional actions here if needed
 
-
-def screen_control():
-    screen_viewer_ser =  screen_share_server(screen_port)
-    screen_viewer_ser.receive_and_show()
 
 def keyboard_control():
     keyboard_ser = Keyboard_server(keyboard_port)
@@ -46,36 +36,75 @@ def keyboard_control():
     keyboard_engine = Keybord_conection(keyboard_ser)
     keyboard_engine.listen_and_send() # listening to the keyboard
 
+def screen_control():
+    screen_viewer_ser =  screen_share_server(screen_port)
+    screen_viewer_ser.receive_and_show()
+
+
 class screen_share_server:
     def __init__(self,port) -> None:
         try: 
             self.server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             self.server.bind(('', port)) # '' makes the server listen to request coming from other computers on the network 
-            gui_thread = threading.Thread(target=self.little_gui)
-            gui_thread.start()
-            print("screen share server successfully created")
-            self.pilImageTk = None
-            self.screenshot_name = "last screenshot.jpg"
-        except socket.error as err: 
-            print("screen share server creation failed with error %s" %(err))
-    
-    def little_gui(self):
-        self.root = tkinter.Tk()
-        self.w, self.h = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
-        self.root.overrideredirect(1)
-        self.root.geometry("%dx%d+0+0" % (self.w, self.h))
-        self.root.focus_set()    
-        self.root.bind("<Escape>", lambda e: (e.widget.withdraw(), e.widget.quit(), exit())) # if esc button is pressed it will stop
-        self.canvas = tkinter.Canvas(self.root,width=self.w,height=self.h)
-        self.canvas.pack()
-        self.canvas.configure(background='black')
-        pil_image = Image.open("temp.jpg")
-        pil_image = self.resize_image_to_fit_dimensions(pil_image)
-        pil_image = ImageTk.PhotoImage(pil_image)
-        self.imagesprite = self.canvas.create_image(self.w/2, self.h/2,image=pil_image)
-        
-        self.root.mainloop()
+        except:
+            print("server is not working")
+            exit()
 
+        self.screenshot_name = "last_screenshot.jpg"
+        self.image = None
+        self.continue_reciving = True
+
+        # Create the Qt application and main window
+        self.app = QApplication(sys.argv)
+        self.main_window = QMainWindow()
+        self.init_gui()
+
+        # Start the GUI update timer
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.update_gui)
+        self.timer.start(100)  # Set the update interval in milliseconds
+       
+        # Start the server thread
+        server_thread = threading.Thread(target=self.receive_and_show)
+        server_thread.start()
+
+        # Connect the keyPressEvent event to the close_window function
+        self.main_window.keyPressEvent = self.close_window
+
+        # Run the application
+        sys.exit(self.app.exec_())
+
+    def init_gui(self):
+        self.main_widget = QWidget()
+        self.main_layout = QVBoxLayout(self.main_widget)
+
+        self.main_widget.setWindowFlags(Qt.WindowType.FramelessWindowHint) 
+
+        self.image_label = QLabel()
+        self.image_label.setAlignment(Qt.AlignCenter)
+
+        # Set the QLabel to cover the full screen without any offset
+        screen_rect = QApplication.desktop().screenGeometry()
+        self.image_label.setGeometry(screen_rect)
+
+        self.main_layout.addWidget(self.image_label)
+
+        self.main_window.setCentralWidget(self.main_widget)
+        self.main_window.showFullScreen()
+
+    def update_gui(self):
+        if self.image:
+            pixmap = QPixmap.fromImage(self.image)
+            self.image_label.setPixmap(pixmap)
+
+
+    
+    def close_window(self, event):
+        if event.key() == Qt.Key_Escape:
+            self.continue_reciving = False
+            self.app.quit()
+
+    
 
     # buff size = 8 bytes header +  4096 bytes image data 
     # first header:  4 bytes image start marker, 4 bytes start size, 2 bytes seq_num, 2 bytes total_packets
@@ -84,7 +113,7 @@ class screen_share_server:
     # 'HH' represents two unsigned short integers, each typically 2 bytes.
     
     def receive_and_show(self):
-        while True:
+        while self.continue_reciving:
             # Receive the header (dynamic buffer size based on expected header size)
             header_data, addr = self.server.recvfrom(4108) # more 4 bytes for beggining 
             if not header_data:
@@ -95,7 +124,7 @@ class screen_share_server:
                 received_data = b""  # b for bytes
 
                 size, seq_num, total_packets = struct.unpack('IHH', header_data[4:12])  # Skip the start of image marker
-                print(f"Received header: Size={size}, Sequence Number={seq_num}, Total Packets={total_packets}")
+                print(f"Received image header: Size={size}, Sequence Number={seq_num}, Total Packets={total_packets}")
                 received_packets = set()
                 received_data += header_data[12:] #take the first data
                 received_packets.add(seq_num)
@@ -108,7 +137,7 @@ class screen_share_server:
                             packet, addr = self.server.recvfrom((size % 4096) + 2)  # Assuming 2 bytes for header seq num and the rest bytes for data
                         else:
                             packet, addr = self.server.recvfrom(4098)  # Assuming 2 bytes for header seq num and 4096 bytes for data
-                    except OSError as packet_problem:
+                    except:
                         in_order = False
                         print("packet raise error \n ignoring rest of packets")
                         break # check for the start to the next image
@@ -118,9 +147,6 @@ class screen_share_server:
 
                     
                     if seq_num != packet_num and in_order:
-                        print(seq_num)
-                        print(packet_num)
-                        print("Packets out of order. Ignoring the image.")
                         in_order = False  # Flag to track whether packets are in order
                         break # check for the start to the next image
 
@@ -133,32 +159,10 @@ class screen_share_server:
                 if in_order and len(received_packets) == total_packets:
                     image = Image.open(io.BytesIO(received_data))
                     image.save(self.screenshot_name)
-                    self.update_image(image)
+                    self.image = QImage(self.screenshot_name)
+
             else:
                 continue     # If the start of image marker is not present, discard the data
-    
-    
-    def update_image(self, pilImage):
-        pilImage = self.resize_image_to_fit_dimensions(pilImage)
-        # Create a new PhotoImage object and store it as an instance variable
-        self.pilImageTk = ImageTk.PhotoImage(pilImage)
-        self.canvas.itemconfig(self.imagesprite, image=self.pilImageTk)
-        
-        self.root.update()
-
-    def resize_image_to_fit_dimensions(self,pilImage):
-        imgWidth, imgHeight = pilImage.size
-        if imgWidth > self.w or imgHeight > self.h:
-            ratio = min(self.w/imgWidth, self.h/imgHeight)
-            imgWidth = int(imgWidth*ratio)
-            imgHeight = int(imgHeight*ratio)
-            pilImage = pilImage.resize((imgWidth,imgHeight), Image.ANTIALIAS)
-        return pilImage
-    
-
-
-
-
 
 class Keyboard_server:
     def __init__(self,port) -> None:
