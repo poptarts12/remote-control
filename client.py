@@ -17,7 +17,6 @@ def main():
         start_threads()
     else:
         print("server is not reachable. fuck you:)")
-        print("recommended: check the ser_ip variable.")
         exit()
 
 
@@ -119,7 +118,6 @@ class Keyboard_Client:
         try: 
             self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             print ("keyboard client successfully created")
-            self.client.settimeout(6)
         except socket.error as err: 
             print ("keyboard client creation failed with error %s" %(err))
             exit()
@@ -130,7 +128,7 @@ class Keyboard_Client:
             print("keyboard connection succed")
         except:
             print("keyboard failed to connect")
-            shutdown()
+
 
     def recive_and_press_keys(self):
         key = self.client.recv(1024).decode() #reciving key name
